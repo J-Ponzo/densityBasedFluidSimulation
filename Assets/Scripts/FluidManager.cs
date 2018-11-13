@@ -9,19 +9,21 @@ public class FluidManager : MonoBehaviour
     public float visc = 0.5f;
     public float diff = 0.5f;
     public float densPerSec = 100f;
-    public float kSpeed = 100f;
 
     private float[] densPrev, dens, uPrev, u, vPrev, v;
     private float sampleSize;
-    private float samplehalfSize;
+    private float sampleHalfSize;
 
     private Vector2 prevPos;
+
+    private ForceSource[] forceSources;
+    private Vector2[] forceField;
 
     // Start is called before the first frame update
     void Start()
     {
         sampleSize = 1f / (float)N;
-        samplehalfSize = sampleSize / 2f;
+        sampleHalfSize = sampleSize / 2f;
 
         densPrev = new float[(N + 2) * (N + 2)];
         dens = new float[(N + 2) * (N + 2)];
@@ -29,6 +31,9 @@ public class FluidManager : MonoBehaviour
         u = new float[(N + 2) * (N + 2)];
         vPrev = new float[(N + 2) * (N + 2)];
         v = new float[(N + 2) * (N + 2)];
+
+        forceField = new Vector2[(N + 2) * (N + 2)];
+        forceSources = FindObjectsOfType<ForceSource>();
     }
 
     int IX(int i, int j)
@@ -44,7 +49,7 @@ public class FluidManager : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void FixedUpdate()
     {
         float dt = Time.deltaTime;
         GetFroUI();
@@ -59,14 +64,27 @@ public class FluidManager : MonoBehaviour
         {
             densPrev[IX(Input.mousePosition.x / (float) Screen.width, Input.mousePosition.y / (float) Screen.height)] = densPerSec * Time.deltaTime;
         }
-        //if (Input.GetKey(KeyCode.Mouse0))
-        //{
-        //    Vector2 pos = new Vector2(Input.mousePosition.x / (float) Screen.width, Input.mousePosition.y / (float)Screen.height);
-        //    Vector2 v = prevPos - pos;
-        //    prevPos = pos;
-        //    uPrev[IX(Input.mousePosition.x / (float) Screen.width, Input.mousePosition.y / (float) Screen.height)] += v.x * kSpeed;
-        //    vPrev[IX(Input.mousePosition.x / (float )Screen.width, Input.mousePosition.y / (float) Screen.height)] += v.y * kSpeed;
-        //}
+
+        Vector2 force;
+        Vector2 location;
+        for (int i = 0; i < N + 2; i++)
+        {
+            for (int j = 0; j < N + 2; j++)
+            {
+                force = Vector2.zero;
+                location = new Vector2((float) i * sampleSize + sampleHalfSize, (float) j * sampleSize + sampleHalfSize);
+                foreach (ForceSource forceSource in forceSources)
+                {
+                    force += forceSource.GetForceAt(location);
+                }
+                forceField[IX(i, j)] = force;
+                if (dens[IX(i, j)] > 0f)
+                {
+                    uPrev[IX(i, j)] += (force.x / dens[IX(i, j)]) * Time.deltaTime;
+                    vPrev[IX(i, j)] += (force.y / dens[IX(i, j)]) * Time.deltaTime;
+                }
+            }
+        }
     }
 
     private void VelStep(float dt)
@@ -74,8 +92,8 @@ public class FluidManager : MonoBehaviour
         AddSource(ref u, ref uPrev, dt);
         AddSource(ref v, ref vPrev, dt);
         Swap(ref uPrev, ref u);
-        Diffuse(1, ref u, ref uPrev, visc, dt);
         Swap(ref vPrev, ref v);
+        Diffuse(1, ref u, ref uPrev, visc, dt);
         Diffuse(2, ref v, ref vPrev, visc, dt);
         Project(ref u, ref v, ref uPrev, ref vPrev);
         Swap(ref uPrev, ref u);
@@ -111,7 +129,7 @@ public class FluidManager : MonoBehaviour
             {
                 for (int j = 1; j < N + 1; j++)
                 {
-                    x[IX(i, j)] = (x0[IX(i, j)] + a * (x[IX(i - 1, j)] + x[IX(i + 1, j)] + x[IX(i, j - 1)] + x[IX(i, j + 1)])) / (1 + 4 * a);
+                    x[IX(i, j)] = (x0[IX(i, j)] + a * (x[IX(i - 1, j)] + x[IX(i + 1, j)] + x[IX(i, j - 1)] + x[IX(i, j + 1)])) / (1f + 4f * a);
                 }
             }
             SetBnd(b, ref x);
@@ -189,7 +207,8 @@ public class FluidManager : MonoBehaviour
             x[IX(0, i)] = b == 1 ? -x[IX(1, i)] : x[IX(1, i)];
             x[IX(N + 1, i)] = b == 1 ? -x[IX(N, i)] : x[IX(N, i)];
             x[IX(i, 0)] = b == 2 ? -x[IX(i, 1)] : x[IX(i, 1)];
-            x[IX(i, N + 1)] = b == 2 ? -x[IX(i, N)] : x[IX(i, N)];
+            x[IX(i, N + 1)] = b == 2 ? -x[IX(i, N)] : x
+                [IX(i, N)];
         }
         x[IX(0, 0)] = 0.5f * (x[IX(1, 0)] + x[IX(0, 1)]);
         x[IX(0, N + 1)] = 0.5f * (x[IX(1, N + 1)] + x[IX(0, N)]);
@@ -212,14 +231,16 @@ public class FluidManager : MonoBehaviour
         int i = 1;
         int j = 1;
         float val;
-        for(float u = samplehalfSize; u < 1; u += sampleSize)
+        for(float x = sampleHalfSize; x < 1; x += sampleSize)
         {
             j = 1;
-            for (float v = samplehalfSize; v < 1; v += sampleSize)
+            for (float y = sampleHalfSize; y < 1; y+= sampleSize)
             {
                 val = dens[IX(i, j)];
                 Gizmos.color = new Color(val, val, val, 1f);
-                Gizmos.DrawCube(new Vector3(u, v, 0f), new Vector3(sampleSize, sampleSize, 1f));
+                //Gizmos.color = new Color(((forceField[IX(i, j)].x / 1000f) + 1f) / 2f, ((forceField[IX(i, j)].y / 1000f) + 1f) / 2f, 0f, 1f);
+                //Gizmos.color = new Color(((u[IX(i, j)]) + 1f) / 2f, ((v[IX(i, j)]) + 1f) / 2f, 0f, 1f);
+                Gizmos.DrawCube(new Vector3(x, y, 0f), new Vector3(sampleSize, sampleSize, 1f));
                 j++;
             }
             i++;
