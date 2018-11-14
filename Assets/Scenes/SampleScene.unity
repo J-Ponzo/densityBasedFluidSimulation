@@ -342,6 +342,11 @@ PrefabInstance:
       propertyPath: magnitude
       value: 5
       objectReference: {fileID: 0}
+    - target: {fileID: 7552229930634209004, guid: 1348f1bf7723e1b49af72f8b1078f92e,
+        type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 1348f1bf7723e1b49af72f8b1078f92e, type: 3}
 --- !u!1001 &436455868
@@ -621,6 +626,7 @@ MonoBehaviour:
   visc: 100
   diff: 0.5
   densPerSec: 1000
+  shaderDef: {fileID: 7200000, guid: 4644821be2452b547af1baab872fedad, type: 3}
 --- !u!1001 &1792530223
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -771,6 +777,11 @@ PrefabInstance:
         type: 3}
       propertyPath: magnitude
       value: 5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7552229930634209004, guid: 1348f1bf7723e1b49af72f8b1078f92e,
+        type: 3}
+      propertyPath: m_IsActive
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 1348f1bf7723e1b49af72f8b1078f92e, type: 3}

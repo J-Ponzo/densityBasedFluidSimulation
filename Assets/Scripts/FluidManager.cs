@@ -5,6 +5,7 @@ using UnityEngine;
 
 public class FluidManager : MonoBehaviour
 {
+    //FLUID SIM
     public int N = 1024;
     public float visc = 0.5f;
     public float diff = 0.5f;
@@ -14,11 +15,9 @@ public class FluidManager : MonoBehaviour
     private float sampleSize;
     private float sampleHalfSize;
 
-    private Vector2 prevPos;
-
     private ForceSource[] forceSources;
-    private Vector2[] forceField;
 
+    //LOGS
     private long forceFieldIntTime;
     private long densAddSourceTime;
     private long densDiffuseTime;
@@ -28,6 +27,17 @@ public class FluidManager : MonoBehaviour
     private long velDiffuseProjTime;
     private long velAdvectTime;
     private long velAdvectProjTime;
+
+    //COMPUTE SHADERS
+    public ComputeShader shaderDef;
+
+    private int kernelComputeForceField;
+    private ComputeShader shader;
+    private ComputeBuffer _sources;
+    private M_ForceSrc[] _sourcesData;
+
+    private ComputeBuffer _forceFieldBuffer;
+    private Vector2[] _forceFieldBufferData;
 
     // Start is called before the first frame update
     void Start()
@@ -42,8 +52,41 @@ public class FluidManager : MonoBehaviour
         vPrev = new float[(N + 2) * (N + 2)];
         v = new float[(N + 2) * (N + 2)];
 
-        forceField = new Vector2[(N + 2) * (N + 2)];
         forceSources = FindObjectsOfType<ForceSource>();
+
+        shader = (ComputeShader)Instantiate(shaderDef);
+        kernelComputeForceField = shader.FindKernel("CSMain");
+        InitShaderData();
+    }
+
+    private void InitShaderData()
+    {
+        shader.SetInt("_N", N);
+        shader.SetFloat("_sampleSize", sampleSize);
+
+        _forceFieldBufferData = new Vector2[(N + 2) * (N + 2)];
+        _forceFieldBuffer = new ComputeBuffer(_forceFieldBufferData.Length, 2 * 4);
+        _forceFieldBuffer.SetData(_forceFieldBufferData);
+        shader.SetBuffer(kernelComputeForceField, "Result", _forceFieldBuffer);
+    }
+    private void UpdateShaderData()
+    {
+        List<M_ForceSrc> sources = new List<M_ForceSrc>();
+        foreach (ForceSource forceSource in forceSources)
+        {
+            sources.Add(forceSource.GetStruct());
+        }
+        _sourcesData = sources.ToArray();
+        _sources = new ComputeBuffer(_sourcesData.Length, 2 * 4 + 4);
+        _sources.SetData(_sourcesData);
+        shader.SetBuffer(kernelComputeForceField, "_sources", _sources);
+        shader.SetInt("_sourcesCount", _sourcesData.Length);
+    }
+
+    private void OnDestroy()
+    {
+        if (_forceFieldBuffer != null) _forceFieldBuffer.Dispose();
+        if (_sources != null) _sources.Dispose();
     }
 
     int IX(int i, int j)
@@ -77,28 +120,27 @@ public class FluidManager : MonoBehaviour
 
         var stopwatch = new System.Diagnostics.Stopwatch();
         stopwatch.Start();
-        Vector2 force;
-        Vector2 location;
+
+        // Update shader's dynamic data 
+        UpdateShaderData();
+        shader.Dispatch(kernelComputeForceField, (N + 2) / 32, (N + 2) / 32, 1);
+        _forceFieldBuffer.GetData(_forceFieldBufferData);
+
+        stopwatch.Stop();
+        forceFieldIntTime = stopwatch.ElapsedMilliseconds;
+
         for (int i = 0; i < N + 2; i++)
         {
             for (int j = 0; j < N + 2; j++)
             {
-                force = Vector2.zero;
-                location = new Vector2((float) i * sampleSize + sampleHalfSize, (float) j * sampleSize + sampleHalfSize);
-                foreach (ForceSource forceSource in forceSources)
+                int index = IX(i, j);
+                if (dens[index] > 0f)
                 {
-                    force += forceSource.GetForceAt(location);
-                }
-                forceField[IX(i, j)] = force;
-                if (dens[IX(i, j)] > 0f)
-                {
-                    uPrev[IX(i, j)] += (force.x / dens[IX(i, j)]) * Time.deltaTime;
-                    vPrev[IX(i, j)] += (force.y / dens[IX(i, j)]) * Time.deltaTime;
+                    uPrev[index] += (_forceFieldBufferData[index].x / dens[index]) * Time.deltaTime;
+                    vPrev[index] += (_forceFieldBufferData[index].y / dens[index]) * Time.deltaTime;
                 }
             }
         }
-        stopwatch.Stop();
-        forceFieldIntTime = stopwatch.ElapsedMilliseconds;
     }
 
     private void VelStep(float dt)

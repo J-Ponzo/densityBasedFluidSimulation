@@ -1,0 +1,42 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+struct M_ForceSrc {
+	float2 pos;
+	float magnitude;
+};
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+RWStructuredBuffer<float2> Result;
+
+//TODO find something better
+StructuredBuffer<float> _wait;
+
+int _N;
+float _sampleSize;
+int _sourcesCount;
+StructuredBuffer<M_ForceSrc> _sources;
+
+int IX(int i, int j)
+{
+	return i + (_N + 2) * j;
+}
+
+[numthreads(32,32,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+	//Find world location
+	float2 worldLocation = float2((float)id.x * _sampleSize + _sampleSize / 2., (float) id.y * _sampleSize + _sampleSize / 2.);
+
+	float2 force = float2(0., 0.);
+	float2 direction;
+	for (int i = 0; i < _sourcesCount; i++) {
+		direction = worldLocation - _sources[i].pos;
+		float d = length(direction);
+		direction = normalize(direction);
+		force += (_sources[i].magnitude * direction) / (d * d);
+	}
+
+    Result[IX(id.x, id.y)] = float2(force.x, force.y);
+}

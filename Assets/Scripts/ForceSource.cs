@@ -14,4 +14,12 @@ public class ForceSource : MonoBehaviour
         direction.Normalize();
         return (magnitude * direction) / (d * d);
     }
+
+    public M_ForceSrc GetStruct()
+    {
+        M_ForceSrc src;
+        src.magnitude = magnitude;
+        src.pos = transform.position;
+        return src;
+    }
 }
