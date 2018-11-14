@@ -19,6 +19,16 @@ public class FluidManager : MonoBehaviour
     private ForceSource[] forceSources;
     private Vector2[] forceField;
 
+    private long forceFieldIntTime;
+    private long densAddSourceTime;
+    private long densDiffuseTime;
+    private long densAdvectTime;
+    private long velAddSourceTime;
+    private long velDiffuseTime;
+    private long velDiffuseProjTime;
+    private long velAdvectTime;
+    private long velAdvectProjTime;
+
     // Start is called before the first frame update
     void Start()
     {
@@ -65,6 +75,8 @@ public class FluidManager : MonoBehaviour
             densPrev[IX(Input.mousePosition.x / (float) Screen.width, Input.mousePosition.y / (float) Screen.height)] = densPerSec * Time.deltaTime;
         }
 
+        var stopwatch = new System.Diagnostics.Stopwatch();
+        stopwatch.Start();
         Vector2 force;
         Vector2 location;
         for (int i = 0; i < N + 2; i++)
@@ -85,31 +97,75 @@ public class FluidManager : MonoBehaviour
                 }
             }
         }
+        stopwatch.Stop();
+        forceFieldIntTime = stopwatch.ElapsedMilliseconds;
     }
 
     private void VelStep(float dt)
     {
+        var stopwatch = new System.Diagnostics.Stopwatch();
+        stopwatch.Start();
         AddSource(ref u, ref uPrev, dt);
         AddSource(ref v, ref vPrev, dt);
+        stopwatch.Stop();
+        velAddSourceTime = stopwatch.ElapsedMilliseconds;
+
         Swap(ref uPrev, ref u);
         Swap(ref vPrev, ref v);
+
+        stopwatch = new System.Diagnostics.Stopwatch();
+        stopwatch.Start();
         Diffuse(1, ref u, ref uPrev, visc, dt);
         Diffuse(2, ref v, ref vPrev, visc, dt);
+        stopwatch.Stop();
+        velDiffuseTime = stopwatch.ElapsedMilliseconds;
+
+        stopwatch = new System.Diagnostics.Stopwatch();
+        stopwatch.Start();
         Project(ref u, ref v, ref uPrev, ref vPrev);
+        stopwatch.Stop();
+        velDiffuseProjTime = stopwatch.ElapsedMilliseconds;
+
         Swap(ref uPrev, ref u);
         Swap(ref vPrev, ref v);
+
+        stopwatch = new System.Diagnostics.Stopwatch();
+        stopwatch.Start();
         Advect(1, ref u, ref uPrev, ref uPrev, ref vPrev, dt);
         Advect(2, ref v, ref vPrev, ref uPrev, ref vPrev, dt);
+        stopwatch.Stop();
+        velAdvectTime = stopwatch.ElapsedMilliseconds;
+
+        stopwatch = new System.Diagnostics.Stopwatch();
+        stopwatch.Start();
         Project(ref u, ref v, ref uPrev, ref vPrev);
+        stopwatch.Stop();
+        velAdvectProjTime = stopwatch.ElapsedMilliseconds;
     }
 
     private void DensStep(float dt)
     {
+        var stopwatch = new System.Diagnostics.Stopwatch();
+        stopwatch.Start();
         AddSource(ref dens, ref densPrev, dt);
+        stopwatch.Stop();
+        densAddSourceTime = stopwatch.ElapsedMilliseconds;
+
         Swap(ref densPrev, ref dens);
+
+        stopwatch = new System.Diagnostics.Stopwatch();
+        stopwatch.Start();
         Diffuse(0, ref dens, ref densPrev, diff, dt);
+        stopwatch.Stop();
+        densDiffuseTime = stopwatch.ElapsedMilliseconds;
+
         Swap(ref densPrev, ref dens);
+
+        stopwatch = new System.Diagnostics.Stopwatch();
+        stopwatch.Start();
         Advect(0, ref dens, ref densPrev, ref u, ref v, dt);
+        stopwatch.Stop();
+        densAdvectTime = stopwatch.ElapsedMilliseconds;
     }
 
     private void AddSource(ref float[] x, ref float[] s, float dt)
@@ -245,5 +301,46 @@ public class FluidManager : MonoBehaviour
             }
             i++;
         }
+    }
+
+    private void OnGUI()
+    {
+        GUIStyle statStyle = new GUIStyle();
+        statStyle.fontSize = 30;
+        statStyle.normal.textColor = Color.white;
+
+        float frameTime = forceFieldIntTime + densAddSourceTime + densDiffuseTime + densAdvectTime + velAddSourceTime 
+            + velDiffuseTime + velDiffuseProjTime + velAdvectTime + velAdvectProjTime;
+        float time = (float)(frameTime) / 1000f;
+        float fps = (float)Math.Round(1f / time, 2);
+        GUI.Label(new Rect(10, 10, 100, 50), "fps : " + fps, statStyle);
+        GUI.Label(new Rect(170, 10, 100, 50), "(" + time * 1000f + " ms)", statStyle);
+
+        time = (float)(forceFieldIntTime) / 1000f;
+        GUI.Label(new Rect(10, 40, 100, 50), "forces field (" + time * 1000f + " ms)", statStyle);
+
+        time = (float)(densAddSourceTime) / 1000f;
+        GUI.Label(new Rect(10, 70, 100, 50), "dens. src (" + time * 1000f + " ms)", statStyle);
+
+        time = (float)(densDiffuseTime) / 1000f;
+        GUI.Label(new Rect(10, 100, 100, 50), "dens. diff. (" + time * 1000f + " ms)", statStyle);
+
+        time = (float)(densAdvectTime) / 1000f;
+        GUI.Label(new Rect(10, 130, 100, 50), "dens. adv. (" + time * 1000f + " ms)", statStyle);
+
+        time = (float)(velAddSourceTime) / 1000f;
+        GUI.Label(new Rect(10, 160, 100, 50), "vel. src  (" + time * 1000f + " ms)", statStyle);
+
+        time = (float)(velDiffuseTime) / 1000f;
+        GUI.Label(new Rect(10, 190, 100, 50), "vel. diff. (" + time * 1000f + " ms)", statStyle);
+
+        time = (float)(velDiffuseProjTime) / 1000f;
+        GUI.Label(new Rect(10, 220, 100, 50), "vel. diff. proj. (" + time * 1000f + " ms)", statStyle);
+
+        time = (float)(velAdvectTime) / 1000f;
+        GUI.Label(new Rect(10, 250, 100, 50), "vel. adv. (" + time * 1000f + " ms)", statStyle);
+
+        time = (float)(velAdvectProjTime) / 1000f;
+        GUI.Label(new Rect(10, 280, 100, 50), "vel. adv. proj. (" + time * 1000f + " ms)", statStyle);
     }
 }
