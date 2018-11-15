@@ -10,8 +10,9 @@ public class FluidManager : MonoBehaviour
     public float visc = 0.5f;
     public float diff = 0.5f;
     public float densPerSec = 100f;
+    public float speedLim = 10f;
 
-    private float[] densPrev, dens, uPrev, u, vPrev, v;
+    private float[] densPrev, dens, uPrev, u, vPrev, v, p, div;
     private float sampleSize;
     private float sampleHalfSize;
 
@@ -29,15 +30,44 @@ public class FluidManager : MonoBehaviour
     private long velAdvectProjTime;
 
     //COMPUTE SHADERS
-    public ComputeShader shaderDef;
+    //Force Field
+    public ComputeShader shaderForceFieldDef;
 
     private int kernelComputeForceField;
-    private ComputeShader shader;
-    private ComputeBuffer _sources;
+    private ComputeShader shaderForceField;
+    private ComputeBuffer _sourcesBuffer;
     private M_ForceSrc[] _sourcesData;
 
     private ComputeBuffer _forceFieldBuffer;
     private Vector2[] _forceFieldBufferData;
+
+    //Diffusion
+    public ComputeShader shaderDiffusionDef;
+
+    private int kernelDiffusion;
+    private ComputeShader shaderDiffusion;
+    private ComputeBuffer _x0Buffer;
+    private ComputeBuffer _xBuffer;
+
+    //Advection
+    public ComputeShader shaderAdvectionDef;
+
+    private int kernelAdvection;
+    private ComputeShader shaderAdvection;
+    private ComputeBuffer _dBuffer;
+    private ComputeBuffer _d0Buffer;
+    private ComputeBuffer _uaBuffer;
+    private ComputeBuffer _vaBuffer;
+
+    //Projection
+    public ComputeShader shaderProjectionDef;
+
+    private int kernelProjection;
+    private ComputeShader shaderProjection;
+    private ComputeBuffer _uBuffer;
+    private ComputeBuffer _vBuffer;
+    private ComputeBuffer _pBuffer;
+    private ComputeBuffer _divBuffer;
 
     // Start is called before the first frame update
     void Start()
@@ -51,25 +81,63 @@ public class FluidManager : MonoBehaviour
         u = new float[(N + 2) * (N + 2)];
         vPrev = new float[(N + 2) * (N + 2)];
         v = new float[(N + 2) * (N + 2)];
+        p = new float[(N + 2) * (N + 2)];
+        div = new float[(N + 2) * (N + 2)];
 
         forceSources = FindObjectsOfType<ForceSource>();
 
-        shader = (ComputeShader)Instantiate(shaderDef);
-        kernelComputeForceField = shader.FindKernel("CSMain");
+        shaderForceField = (ComputeShader)Instantiate(shaderForceFieldDef);
+        kernelComputeForceField = shaderForceField.FindKernel("CSMain");
+        shaderDiffusion = (ComputeShader)Instantiate(shaderDiffusionDef);
+        kernelDiffusion = shaderForceField.FindKernel("CSMain");
+        shaderAdvection = (ComputeShader)Instantiate(shaderAdvectionDef);
+        kernelAdvection = shaderForceField.FindKernel("CSMain");
+        shaderProjection = (ComputeShader)Instantiate(shaderProjectionDef);
+        kernelProjection = shaderProjection.FindKernel("CSMain");
+
         InitShaderData();
     }
 
     private void InitShaderData()
     {
-        shader.SetInt("_N", N);
-        shader.SetFloat("_sampleSize", sampleSize);
-
+        //Force field shader init
+        shaderForceField.SetInt("_N", N);
+        shaderForceField.SetFloat("_sampleSize", sampleSize);
         _forceFieldBufferData = new Vector2[(N + 2) * (N + 2)];
         _forceFieldBuffer = new ComputeBuffer(_forceFieldBufferData.Length, 2 * 4);
         _forceFieldBuffer.SetData(_forceFieldBufferData);
-        shader.SetBuffer(kernelComputeForceField, "Result", _forceFieldBuffer);
+        shaderForceField.SetBuffer(kernelComputeForceField, "Result", _forceFieldBuffer);
+
+        //Diffusion shader init
+        shaderDiffusion.SetInt("_N", N);
+        _x0Buffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderDiffusion.SetBuffer(kernelDiffusion, "_x0", _x0Buffer);
+        _xBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderDiffusion.SetBuffer(kernelDiffusion, "Result", _xBuffer);
+
+        //Projection shader init
+        shaderAdvection.SetInt("_N", N);
+        _dBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderAdvection.SetBuffer(kernelAdvection, "_d", _dBuffer);
+        _d0Buffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderAdvection.SetBuffer(kernelAdvection, "_d0", _d0Buffer);
+        _uaBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderAdvection.SetBuffer(kernelAdvection, "_u", _uaBuffer);
+        _vaBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderAdvection.SetBuffer(kernelAdvection, "_v", _vaBuffer);
+
+        //Projection shader init
+        shaderProjection.SetInt("_N", N);
+        _uBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderProjection.SetBuffer(kernelProjection, "_u", _uBuffer);
+        _vBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderProjection.SetBuffer(kernelProjection, "_v", _vBuffer);
+        _pBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderProjection.SetBuffer(kernelProjection, "_p", _pBuffer);
+        _divBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderProjection.SetBuffer(kernelProjection, "_div", _divBuffer);
     }
-    private void UpdateShaderData()
+    private void UpdateForceFieldShaderData()
     {
         List<M_ForceSrc> sources = new List<M_ForceSrc>();
         foreach (ForceSource forceSource in forceSources)
@@ -77,16 +145,55 @@ public class FluidManager : MonoBehaviour
             sources.Add(forceSource.GetStruct());
         }
         _sourcesData = sources.ToArray();
-        _sources = new ComputeBuffer(_sourcesData.Length, 2 * 4 + 4);
-        _sources.SetData(_sourcesData);
-        shader.SetBuffer(kernelComputeForceField, "_sources", _sources);
-        shader.SetInt("_sourcesCount", _sourcesData.Length);
+        _sourcesBuffer = new ComputeBuffer(_sourcesData.Length, 2 * 4 + 4);
+        _sourcesBuffer.SetData(_sourcesData);
+        shaderForceField.SetBuffer(kernelComputeForceField, "_sources", _sourcesBuffer);
+        shaderForceField.SetInt("_sourcesCount", _sourcesData.Length);
+    }
+
+    private void UpdateDiffusionShaderData(int b, float[] x, float[] x0, float diff, float dt)
+    {
+        shaderDiffusion.SetInt("_b", b);
+        shaderDiffusion.SetFloat("_diff", diff);
+        shaderDiffusion.SetFloat("_dt", dt);
+
+        _x0Buffer.SetData(x0);
+        _xBuffer.SetData(x);
+    }
+
+    private void UpdateAdvectionShaderData(int b, float[] d, float[] d0, float[] u, float[] v, float dt)
+    {
+        shaderAdvection.SetInt("_b", b);
+        shaderAdvection.SetFloat("_dt", dt);
+
+        _dBuffer.SetData(d);
+        _d0Buffer.SetData(d0);
+        _uaBuffer.SetData(u);
+        _vaBuffer.SetData(v);
+    }
+
+    private void UpdateProjectionShaderData(float[] u, float[] v, float[] p, float[] div)
+    {
+        _uBuffer.SetData(u);
+        _vBuffer.SetData(v);
+        _pBuffer.SetData(p);
+        _divBuffer.SetData(div);
     }
 
     private void OnDestroy()
     {
         if (_forceFieldBuffer != null) _forceFieldBuffer.Dispose();
-        if (_sources != null) _sources.Dispose();
+        if (_sourcesBuffer != null) _sourcesBuffer.Dispose();
+        if (_x0Buffer != null) _x0Buffer.Dispose();
+        if (_xBuffer != null) _xBuffer.Dispose();
+        if (_uBuffer != null) _uBuffer.Dispose();
+        if (_vBuffer != null) _vBuffer.Dispose();
+        if (_pBuffer != null) _pBuffer.Dispose();
+        if (_divBuffer != null) _divBuffer.Dispose();
+        if (_dBuffer != null) _dBuffer.Dispose();
+        if (_d0Buffer != null) _d0Buffer.Dispose();
+        if (_uaBuffer != null) _uaBuffer.Dispose();
+        if (_vaBuffer != null) _vaBuffer.Dispose();
     }
 
     int IX(int i, int j)
@@ -122,33 +229,35 @@ public class FluidManager : MonoBehaviour
         stopwatch.Start();
 
         // Update shader's dynamic data 
-        UpdateShaderData();
-        shader.Dispatch(kernelComputeForceField, (N + 2) / 32, (N + 2) / 32, 1);
+        UpdateForceFieldShaderData();
+        shaderForceField.Dispatch(kernelComputeForceField, (N + 2) / 32, (N + 2) / 32, 1);
         _forceFieldBuffer.GetData(_forceFieldBufferData);
-
-        stopwatch.Stop();
-        forceFieldIntTime = stopwatch.ElapsedMilliseconds;
 
         for (int i = 0; i < N + 2; i++)
         {
             for (int j = 0; j < N + 2; j++)
             {
                 int index = IX(i, j);
-                if (dens[index] > 0f)
+                if (Mathf.Abs(dens[index]) > 0f)
                 {
                     uPrev[index] += (_forceFieldBufferData[index].x / dens[index]) * Time.deltaTime;
                     vPrev[index] += (_forceFieldBufferData[index].y / dens[index]) * Time.deltaTime;
+                    uPrev[index] = Mathf.Clamp(uPrev[index], -speedLim, speedLim);
+                    vPrev[index] = Mathf.Clamp(vPrev[index], -speedLim, speedLim);
                 }
             }
         }
+
+        stopwatch.Stop();
+        forceFieldIntTime = stopwatch.ElapsedMilliseconds;
     }
 
     private void VelStep(float dt)
     {
         var stopwatch = new System.Diagnostics.Stopwatch();
         stopwatch.Start();
-        AddSource(ref u, ref uPrev, dt);
-        AddSource(ref v, ref vPrev, dt);
+        AddSource(ref u, uPrev, dt);
+        AddSource(ref v, vPrev, dt);
         stopwatch.Stop();
         velAddSourceTime = stopwatch.ElapsedMilliseconds;
 
@@ -157,14 +266,33 @@ public class FluidManager : MonoBehaviour
 
         stopwatch = new System.Diagnostics.Stopwatch();
         stopwatch.Start();
-        Diffuse(1, ref u, ref uPrev, visc, dt);
-        Diffuse(2, ref v, ref vPrev, visc, dt);
+
+
+        UpdateDiffusionShaderData(1, u, uPrev, visc, dt);
+        shaderDiffusion.Dispatch(kernelDiffusion, (N + 2) / 32, (N + 2) / 32, 1);
+        _xBuffer.GetData(u);
+        //Diffuse(1, ref u, ref uPrev, visc, dt);
+
+        UpdateDiffusionShaderData(2, v, vPrev, visc, dt);
+        shaderDiffusion.Dispatch(kernelDiffusion, (N + 2) / 32, (N + 2) / 32, 1);
+        _xBuffer.GetData(v);
+        //Diffuse(2, ref v, ref vPrev, visc, dt);
+
+
         stopwatch.Stop();
         velDiffuseTime = stopwatch.ElapsedMilliseconds;
 
         stopwatch = new System.Diagnostics.Stopwatch();
         stopwatch.Start();
-        Project(ref u, ref v, ref uPrev, ref vPrev);
+
+
+        UpdateProjectionShaderData(u, v, p, div);
+        shaderProjection.Dispatch(kernelProjection, (N + 2) / 32, (N + 2) / 32, 1);
+        _vBuffer.GetData(u);
+        _vBuffer.GetData(v);
+        //Project(ref u, ref v, uPrev, vPrev);
+
+
         stopwatch.Stop();
         velDiffuseProjTime = stopwatch.ElapsedMilliseconds;
 
@@ -173,14 +301,32 @@ public class FluidManager : MonoBehaviour
 
         stopwatch = new System.Diagnostics.Stopwatch();
         stopwatch.Start();
-        Advect(1, ref u, ref uPrev, ref uPrev, ref vPrev, dt);
-        Advect(2, ref v, ref vPrev, ref uPrev, ref vPrev, dt);
+
+        UpdateAdvectionShaderData(1, u, uPrev, uPrev, vPrev, dt);
+        shaderAdvection.Dispatch(kernelAdvection, (N + 2) / 32, (N + 2) / 32, 1);
+        _dBuffer.GetData(u);
+        //Advect(1, ref u, uPrev, uPrev, vPrev, dt);
+
+        UpdateAdvectionShaderData(2, v, vPrev, uPrev, vPrev, dt);
+        shaderAdvection.Dispatch(kernelAdvection, (N + 2) / 32, (N + 2) / 32, 1);
+        _dBuffer.GetData(v);
+        //Advect(2, ref v, vPrev, uPrev, vPrev, dt);
+
+
         stopwatch.Stop();
         velAdvectTime = stopwatch.ElapsedMilliseconds;
 
         stopwatch = new System.Diagnostics.Stopwatch();
         stopwatch.Start();
-        Project(ref u, ref v, ref uPrev, ref vPrev);
+
+
+        UpdateProjectionShaderData(u, v, p, div);
+        shaderProjection.Dispatch(kernelProjection, (N + 2) / 32, (N + 2) / 32, 1);
+        _vBuffer.GetData(u);
+        _vBuffer.GetData(v);
+        //Project(ref u, ref v, uPrev, vPrev);
+
+
         stopwatch.Stop();
         velAdvectProjTime = stopwatch.ElapsedMilliseconds;
     }
@@ -189,7 +335,7 @@ public class FluidManager : MonoBehaviour
     {
         var stopwatch = new System.Diagnostics.Stopwatch();
         stopwatch.Start();
-        AddSource(ref dens, ref densPrev, dt);
+        AddSource(ref dens, densPrev, dt);
         stopwatch.Stop();
         densAddSourceTime = stopwatch.ElapsedMilliseconds;
 
@@ -197,7 +343,14 @@ public class FluidManager : MonoBehaviour
 
         stopwatch = new System.Diagnostics.Stopwatch();
         stopwatch.Start();
-        Diffuse(0, ref dens, ref densPrev, diff, dt);
+
+
+        UpdateDiffusionShaderData(0, dens, densPrev, diff, dt);
+        shaderDiffusion.Dispatch(kernelDiffusion, (N + 2) / 32, (N + 2) / 32, 1);
+        _xBuffer.GetData(dens);
+        //Diffuse(0, ref dens, ref densPrev, diff, dt);
+
+
         stopwatch.Stop();
         densDiffuseTime = stopwatch.ElapsedMilliseconds;
 
@@ -205,12 +358,19 @@ public class FluidManager : MonoBehaviour
 
         stopwatch = new System.Diagnostics.Stopwatch();
         stopwatch.Start();
-        Advect(0, ref dens, ref densPrev, ref u, ref v, dt);
+
+
+        UpdateAdvectionShaderData(0, dens, densPrev, u, v, dt);
+        shaderAdvection.Dispatch(kernelAdvection, (N + 2) / 32, (N + 2) / 32, 1);
+        _dBuffer.GetData(dens);
+        //Advect(0, ref dens, densPrev, u, v, dt);
+
+
         stopwatch.Stop();
         densAdvectTime = stopwatch.ElapsedMilliseconds;
     }
 
-    private void AddSource(ref float[] x, ref float[] s, float dt)
+    private void AddSource(ref float[] x, float[] s, float dt)
     {
         for (int i = 0;  i < x.Length; i++)
         {
@@ -234,7 +394,7 @@ public class FluidManager : MonoBehaviour
         }
     }
 
-    private void Advect (int b, ref float[] d, ref float[] d0, ref float[] u, ref float[] v, float dt)
+    private void Advect (int b, ref float[] d, float[] d0, float[] u, float[] v, float dt)
     {
         int i0, j0, i1, j1;
         float x, y, s0, t0, s1, t1, dt0;
@@ -244,17 +404,18 @@ public class FluidManager : MonoBehaviour
             for (int j = 1; j < N + 1; j++)
             {
                 x = i - dt0 * u[IX(i, j)]; y = j - dt0 * v[IX(i, j)];
-                if (x < 0.5f) x = 0.5f; if (x > N + 0.5f) x = N + 0.5f; i0 = (int)x; i1 = i0 + 1;
+                if (x < 0.5f) x = 0.5f;if (x > N + 0.5f) x = N + 0.5f;
+                i0 = (int)x; i1 = i0 + 1;
                 if (y < 0.5f) y = 0.5f; if (y > N + 0.5) y = N + 0.5f; j0 = (int)y; j1 = j0 + 1;
                 s1 = x - i0; s0 = 1f - s1; t1 = y - j0; t0 = 1f - t1;
-                d[IX(i, j)] = s0 * (t0 * d0[IX(i0, j0)] + t1 * d0[IX(i0, j1)])+
+                d[IX(i, j)] = s0 * (t0 * d0[IX(i0, j0)] + t1 * d0[IX(i0, j1)]) +
                             s1 * (t0 * d0[IX(i1, j0)] + t1 * d0[IX(i1, j1)]);
             }
         }
         SetBnd(b, ref d);
     }
 
-    private void Project (ref float[] u, ref float[] v, ref float[] p, ref float[] div)
+    private void Project (ref float[] u, ref float[] v, float[] p, float[] div)
     {
         float h;
         h = 1f / N;
@@ -262,8 +423,7 @@ public class FluidManager : MonoBehaviour
         {
             for (int j = 1; j < N + 1; j++)
             {
-                div[IX(i, j)] = -0.5f * h * (u[IX(i + 1, j)] - u[IX(i - 1, j)] +
-                v[IX(i, j + 1)] - v[IX(i, j - 1)]);
+                div[IX(i, j)] = -0.5f * h * (u[IX(i + 1, j)] - u[IX(i - 1, j)] + v[IX(i, j + 1)] - v[IX(i, j - 1)]);
                 p[IX(i, j)] = 0;
             }
         }
@@ -274,8 +434,7 @@ public class FluidManager : MonoBehaviour
             {
                 for (int j = 1; j < N + 1; j++)
                 {
-                    p[IX(i, j)] = (div[IX(i, j)] + p[IX(i - 1, j)] + p[IX(i + 1, j)] +
-                     p[IX(i, j - 1)] + p[IX(i, j + 1)]) / 4;
+                    p[IX(i, j)] = (div[IX(i, j)] + p[IX(i - 1, j)] + p[IX(i + 1, j)] + p[IX(i, j - 1)] + p[IX(i, j + 1)]) / 4f;
                 }
             }
             SetBnd(0, ref p);
@@ -329,10 +488,10 @@ public class FluidManager : MonoBehaviour
         int i = 1;
         int j = 1;
         float val;
-        for(float x = sampleHalfSize; x < 1; x += sampleSize)
+        for (float x = sampleHalfSize; x < 1; x += sampleSize)
         {
             j = 1;
-            for (float y = sampleHalfSize; y < 1; y+= sampleSize)
+            for (float y = sampleHalfSize; y < 1; y += sampleSize)
             {
                 val = dens[IX(i, j)];
                 Gizmos.color = new Color(val, val, val, 1f);

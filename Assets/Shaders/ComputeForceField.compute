@@ -10,9 +10,6 @@ struct M_ForceSrc {
 // with cs.SetTexture
 RWStructuredBuffer<float2> Result;
 
-//TODO find something better
-StructuredBuffer<float> _wait;
-
 int _N;
 float _sampleSize;
 int _sourcesCount;

@@ -1,0 +1,51 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+RWStructuredBuffer<float> Result;
+
+int _b;
+int _N;
+float _diff;
+float _dt;
+StructuredBuffer<float> _x0;
+
+int IX(int i, int j)
+{
+	return i + (_N + 2) * j;
+}
+
+void SetBnd(int b)
+{
+	for (int i = 1; i < _N + 1; i++)
+	{
+		Result[IX(0, i)] = b == 1 ? -Result[IX(1, i)] : Result[IX(1, i)];
+		Result[IX(_N + 1, i)] = b == 1 ? -Result[IX(_N, i)] : Result[IX(_N, i)];
+		Result[IX(i, 0)] = b == 2 ? -Result[IX(i, 1)] : Result[IX(i, 1)];
+		Result[IX(i, _N + 1)] = b == 2 ? -Result[IX(i, _N)] : Result[IX(i, _N)];
+	}
+	Result[IX(0, 0)] = 0.5 * (Result[IX(1, 0)] + Result[IX(0, 1)]);
+	Result[IX(0, _N + 1)] = 0.5 * (Result[IX(1, _N + 1)] + Result[IX(0, _N)]);
+	Result[IX(_N + 1, 0)] = 0.5 * (Result[IX(_N, 0)] + Result[IX(_N + 1, 1)]);
+	Result[IX(_N + 1, _N + 1)] = 0.5 * (Result[IX(_N, _N + 1)] + Result[IX(_N + 1, _N)]);
+}
+
+[numthreads(32,32,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+	//if (id.x < 1 || id.x > _N || id.y < 1 || id.y > _N) return;
+
+	int index = IX(id.x, id.y);
+	int indexLeft = IX(id.x - 1, id.y);
+	int indexRight = IX(id.x + 1, id.y);
+	int indexUp = IX(id.x, id.y + 1);
+	int indexDown = IX(id.x, id.y - 1);
+
+	float a = _dt * _diff * _N * _N;
+	for (int k = 0; k < 20; k++) {
+		Result[index] = (_x0[index] + a * (Result[indexLeft] + Result[indexRight] + Result[indexDown] + Result[indexUp])) / (1. + 4. * a);
+		AllMemoryBarrier();
+		//SetBnd(_b);
+	}
+}
