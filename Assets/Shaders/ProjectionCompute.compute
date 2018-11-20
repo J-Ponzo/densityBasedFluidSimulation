@@ -15,7 +15,7 @@ int IX(int i, int j)
 	return i + (_N + 2) * j;
 }
 
-[numthreads(16,16,1)]
+[numthreads(32,32,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
 	int index = IX(id.x, id.y);

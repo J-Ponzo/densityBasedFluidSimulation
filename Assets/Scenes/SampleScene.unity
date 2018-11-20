@@ -182,7 +182,7 @@ PrefabInstance:
     - target: {fileID: 1692808385548070567, guid: 1348f1bf7723e1b49af72f8b1078f92e,
         type: 3}
       propertyPath: magnitude
-      value: 0.1
+      value: -1
       objectReference: {fileID: 0}
     - target: {fileID: 7552229930634209004, guid: 1348f1bf7723e1b49af72f8b1078f92e,
         type: 3}
@@ -261,7 +261,7 @@ PrefabInstance:
     - target: {fileID: 1692808385548070567, guid: 1348f1bf7723e1b49af72f8b1078f92e,
         type: 3}
       propertyPath: magnitude
-      value: 0.1
+      value: -1
       objectReference: {fileID: 0}
     - target: {fileID: 7552229930634209004, guid: 1348f1bf7723e1b49af72f8b1078f92e,
         type: 3}
@@ -340,7 +340,7 @@ PrefabInstance:
     - target: {fileID: 1692808385548070567, guid: 1348f1bf7723e1b49af72f8b1078f92e,
         type: 3}
       propertyPath: magnitude
-      value: 0.1
+      value: -1
       objectReference: {fileID: 0}
     - target: {fileID: 7552229930634209004, guid: 1348f1bf7723e1b49af72f8b1078f92e,
         type: 3}
@@ -419,7 +419,7 @@ PrefabInstance:
     - target: {fileID: 1692808385548070567, guid: 1348f1bf7723e1b49af72f8b1078f92e,
         type: 3}
       propertyPath: magnitude
-      value: 0.1
+      value: -1
       objectReference: {fileID: 0}
     - target: {fileID: 7552229930634209004, guid: 1348f1bf7723e1b49af72f8b1078f92e,
         type: 3}
@@ -622,13 +622,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cb299b0d5f35db34eab66de7fe38c6ac, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  N: 256
+  N: 512
   visc: 0.1
   diff: 0.5
   densPerSec: 1000
   speedLim: 50
   maxSource: 32
-  shaderForceFieldDef: {fileID: 7200000, guid: 4644821be2452b547af1baab872fedad, type: 3}
+  shaderForceFieldComputeDef: {fileID: 7200000, guid: 4644821be2452b547af1baab872fedad,
+    type: 3}
+  shaderForceFieldApplyDef: {fileID: 7200000, guid: 5fc7bdb23fe478e42a724254468c02c0,
+    type: 3}
   shaderDiffusionDef: {fileID: 7200000, guid: 4202841b897083a4bb7cdd422464b841, type: 3}
   shaderAdvectionDef: {fileID: 7200000, guid: 5e41b60823fa7f44fa689f2bb8e4abc3, type: 3}
   shaderProjectionComputeDef: {fileID: 7200000, guid: 5cdc2079893a7cc4bb64fdbbf2bd399d,
@@ -705,7 +708,7 @@ PrefabInstance:
     - target: {fileID: 1692808385548070567, guid: 1348f1bf7723e1b49af72f8b1078f92e,
         type: 3}
       propertyPath: magnitude
-      value: 0.1
+      value: -1
       objectReference: {fileID: 0}
     - target: {fileID: 7552229930634209004, guid: 1348f1bf7723e1b49af72f8b1078f92e,
         type: 3}
@@ -784,7 +787,7 @@ PrefabInstance:
     - target: {fileID: 1692808385548070567, guid: 1348f1bf7723e1b49af72f8b1078f92e,
         type: 3}
       propertyPath: magnitude
-      value: 0.1
+      value: -1
       objectReference: {fileID: 0}
     - target: {fileID: 7552229930634209004, guid: 1348f1bf7723e1b49af72f8b1078f92e,
         type: 3}

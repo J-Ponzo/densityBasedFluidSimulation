@@ -1,0 +1,31 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+RWStructuredBuffer<float> _u;
+RWStructuredBuffer<float> _v;
+
+StructuredBuffer<float2> _f;
+StructuredBuffer<float> _d;
+
+int _N;
+float _speedLim;
+float _dt;
+
+int IX(int i, int j)
+{
+	return i + (_N + 2) * j;
+}
+
+[numthreads(32,32,1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	int index = IX(id.x, id.y);
+	if (abs(_d[index]) > 0.) {
+		_u[index] += (_f[index].x / _d[index]) * _dt;
+		_v[index] += (_f[index].y / _d[index]) * _dt;
+		_u[index] = clamp(_u[index], -_speedLim, _speedLim);
+		_v[index] = clamp(_v[index], -_speedLim, _speedLim);
+	}
+}

@@ -31,16 +31,25 @@ public class FluidManager : MonoBehaviour
     private long velAdvectProjTime;
 
     //COMPUTE SHADERS
-    //Force Field
-    public ComputeShader shaderForceFieldDef;
+    //Force Field Compute
+    public ComputeShader shaderForceFieldComputeDef;
 
-    private int kernelComputeForceField;
-    private ComputeShader shaderForceField;
+    private int kernelForceFieldCompute;
+    private ComputeShader shaderForceFieldCompute;
     private ComputeBuffer _sourcesBuffer;
     private M_ForceSrc[] _sourcesData;
-
     private ComputeBuffer _forceFieldBuffer;
     private Vector2[] _forceFieldBufferData;
+
+    //Force Field Apply
+    public ComputeShader shaderForceFieldApplyDef;
+
+    private int kernelForceFieldApply;
+    private ComputeShader shaderForceFieldApply;
+    private ComputeBuffer _ufBuffer;
+    private ComputeBuffer _vfBuffer;
+    private ComputeBuffer _fBuffer;
+    private ComputeBuffer _dfBuffer;
 
     //Diffusion
     public ComputeShader shaderDiffusionDef;
@@ -95,12 +104,14 @@ public class FluidManager : MonoBehaviour
 
         forceSources = FindObjectsOfType<ForceSource>();
 
-        shaderForceField = (ComputeShader)Instantiate(shaderForceFieldDef);
-        kernelComputeForceField = shaderForceField.FindKernel("CSMain");
+        shaderForceFieldCompute = (ComputeShader)Instantiate(shaderForceFieldComputeDef);
+        kernelForceFieldCompute = shaderForceFieldCompute.FindKernel("CSMain");
+        shaderForceFieldApply= (ComputeShader)Instantiate(shaderForceFieldApplyDef);
+        kernelForceFieldApply= shaderForceFieldApply.FindKernel("CSMain");
         shaderDiffusion = (ComputeShader)Instantiate(shaderDiffusionDef);
-        kernelDiffusion = shaderForceField.FindKernel("CSMain");
+        kernelDiffusion = shaderForceFieldCompute.FindKernel("CSMain");
         shaderAdvection = (ComputeShader)Instantiate(shaderAdvectionDef);
-        kernelAdvection = shaderForceField.FindKernel("CSMain");
+        kernelAdvection = shaderForceFieldCompute.FindKernel("CSMain");
         shaderProjectionCompute = (ComputeShader)Instantiate(shaderProjectionComputeDef);
         kernelProjectionCompute = shaderProjectionCompute.FindKernel("CSMain");
         shaderProjectionApply = (ComputeShader)Instantiate(shaderProjectionApplyDef);
@@ -111,14 +122,26 @@ public class FluidManager : MonoBehaviour
 
     private void InitShaderData()
     {
-        //Force field shader init
-        shaderForceField.SetInt("_N", N);
+        //Force field compute shader init
+        shaderForceFieldCompute.SetInt("_N", N);
         _forceFieldBufferData = new Vector2[(N + 2) * (N + 2)];
         _forceFieldBuffer = new ComputeBuffer(_forceFieldBufferData.Length, 2 * 4);
         _forceFieldBuffer.SetData(_forceFieldBufferData);
-        shaderForceField.SetBuffer(kernelComputeForceField, "Result", _forceFieldBuffer);
+        shaderForceFieldCompute.SetBuffer(kernelForceFieldCompute, "Result", _forceFieldBuffer);
         _sourcesBuffer = new ComputeBuffer(maxSource, 2 * 4 + 4);
-        shaderForceField.SetBuffer(kernelComputeForceField, "_sources", _sourcesBuffer);
+        shaderForceFieldCompute.SetBuffer(kernelForceFieldCompute, "_sources", _sourcesBuffer);
+
+        //Force field apply shader init
+        shaderForceFieldApply.SetInt("_N", N);
+        shaderForceFieldApply.SetFloat("_speedLim", speedLim);
+        _ufBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderForceFieldApply.SetBuffer(kernelForceFieldApply, "_u", _ufBuffer);
+        _vfBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderForceFieldApply.SetBuffer(kernelForceFieldApply, "_v", _vfBuffer);
+        _fBuffer = new ComputeBuffer((N + 2) * (N + 2), 2 * 4);
+        shaderForceFieldApply.SetBuffer(kernelForceFieldApply, "_f", _fBuffer);
+        _dfBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderForceFieldApply.SetBuffer(kernelForceFieldApply, "_d", _dfBuffer);
 
         //Diffusion shader init
         shaderDiffusion.SetInt("_N", N);
@@ -156,16 +179,27 @@ public class FluidManager : MonoBehaviour
         _pInBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
         shaderProjectionApply.SetBuffer(kernelProjectionApply, "_p", _pInBuffer);
     }
-    private void UpdateForceFieldShaderData()
+
+    private void UpdateForceFieldComputeShaderData()
     {
         int nbSourcesSent = Math.Min(forceSources.Length, maxSource);
-        shaderForceField.SetInt("_sourcesCount", nbSourcesSent);
+        shaderForceFieldCompute.SetInt("_sourcesCount", nbSourcesSent);
 
         _sourcesData = new M_ForceSrc[maxSource];
         for (int i = 0; i < nbSourcesSent; i++) {
             _sourcesData[i] = forceSources[i].GetStruct();
         }
         _sourcesBuffer.SetData(_sourcesData);
+    }
+
+    private void UpdateForceFieldApplyShaderData(float[] u, float[] v, Vector2[] f, float[] d, float dt)
+    {
+        shaderForceFieldApply.SetFloat("_dt", dt);
+
+        _ufBuffer.SetData(u);
+        _vfBuffer.SetData(v);
+        _fBuffer.SetData(f);
+        _dfBuffer.SetData(d);
     }
 
     private void UpdateDiffusionShaderData(int b, float[] x, float[] x0, float diff, float dt)
@@ -219,6 +253,10 @@ public class FluidManager : MonoBehaviour
         if (_uOutBuffer != null) _uOutBuffer.Dispose();
         if (_vOutBuffer != null) _vOutBuffer.Dispose();
         if (_pInBuffer != null) _pInBuffer.Dispose();
+        if (_ufBuffer != null) _ufBuffer.Dispose();
+        if (_vfBuffer != null) _vfBuffer.Dispose();
+        if (_fBuffer != null) _fBuffer.Dispose();
+        if (_dfBuffer != null) _dfBuffer.Dispose();
     }
 
     int IX(int i, int j)
@@ -237,13 +275,13 @@ public class FluidManager : MonoBehaviour
     void FixedUpdate()
     {
         float dt = Time.deltaTime;
-        GetFroUI();
+        GetFromUI(dt);
         VelStep(dt);
         DensStep(dt);
         DrawStep();
     }
 
-    private void GetFroUI()
+    private void GetFromUI(float dt)
     {
         if (Input.GetKey(KeyCode.Mouse1))
         {
@@ -254,24 +292,28 @@ public class FluidManager : MonoBehaviour
         stopwatch.Start();
 
         // Update shader's dynamic data 
-        UpdateForceFieldShaderData();
-        shaderForceField.Dispatch(kernelComputeForceField, (N + 2) / 16, (N + 2) / 16, 1);
+        UpdateForceFieldComputeShaderData();
+        shaderForceFieldCompute.Dispatch(kernelForceFieldCompute, (N + 2) / 32, (N + 2) / 32, 1);
         _forceFieldBuffer.GetData(_forceFieldBufferData);
 
-        for (int i = 0; i < N + 2; i++)
-        {
-            for (int j = 0; j < N + 2; j++)
-            {
-                int index = IX(i, j);
-                if (Mathf.Abs(dens[index]) > 0f)
-                {
-                    uPrev[index] += (_forceFieldBufferData[index].x / dens[index]) * Time.deltaTime;
-                    vPrev[index] += (_forceFieldBufferData[index].y / dens[index]) * Time.deltaTime;
-                    uPrev[index] = Mathf.Clamp(uPrev[index], -speedLim, speedLim);
-                    vPrev[index] = Mathf.Clamp(vPrev[index], -speedLim, speedLim);
-                }
-            }
-        }
+        UpdateForceFieldApplyShaderData(uPrev, vPrev, _forceFieldBufferData, dens, dt);
+        shaderForceFieldApply.Dispatch(kernelForceFieldApply, (N + 2) / 32, (N + 2) / 32, 1);
+        _ufBuffer.GetData(uPrev);
+        _vfBuffer.GetData(vPrev);
+        //for (int i = 0; i < N + 2; i++)
+        //{
+        //    for (int j = 0; j < N + 2; j++)
+        //    {
+        //        int index = IX(i, j);
+        //        if (Mathf.Abs(dens[index]) > 0f)
+        //        {
+        //            uPrev[index] += (_forceFieldBufferData[index].x / dens[index]) * Time.deltaTime;
+        //            vPrev[index] += (_forceFieldBufferData[index].y / dens[index]) * Time.deltaTime;
+        //            uPrev[index] = Mathf.Clamp(uPrev[index], -speedLim, speedLim);
+        //            vPrev[index] = Mathf.Clamp(vPrev[index], -speedLim, speedLim);
+        //        }
+        //    }
+        //}
 
         stopwatch.Stop();
         forceFieldIntTime = stopwatch.ElapsedMilliseconds;
@@ -320,11 +362,11 @@ public class FluidManager : MonoBehaviour
         UpdateProjectionComputeShaderData(u, v, p, div);
         for (int i = 0; i < 20; i++)
         {
-            shaderProjectionCompute.Dispatch(kernelProjectionCompute, (N + 2) / 16, (N + 2) / 16, 1);
+            shaderProjectionCompute.Dispatch(kernelProjectionCompute, (N + 2) / 32, (N + 2) / 32, 1);
         }
         _pOutBuffer.GetData(p);
         UpdateProjectionApplyShaderData(u, v, p, div);
-        shaderProjectionApply.Dispatch(kernelProjectionApply, (N + 2) / 16, (N + 2) / 16, 1);
+        shaderProjectionApply.Dispatch(kernelProjectionApply, (N + 2) / 32, (N + 2) / 32, 1);
         _uOutBuffer.GetData(u);
         _vOutBuffer.GetData(v);
         //Project(ref u, ref v, uPrev, vPrev);
@@ -360,11 +402,11 @@ public class FluidManager : MonoBehaviour
         UpdateProjectionComputeShaderData(u, v, p, div);
         for (int i = 0; i < 20; i++)
         {
-            shaderProjectionCompute.Dispatch(kernelProjectionCompute, (N + 2) / 16, (N + 2) / 16, 1);
+            shaderProjectionCompute.Dispatch(kernelProjectionCompute, (N + 2) / 32, (N + 2) / 32, 1);
         }
         _pOutBuffer.GetData(p);
         UpdateProjectionApplyShaderData(u, v, p, div);
-        shaderProjectionApply.Dispatch(kernelProjectionApply, (N + 2) / 16, (N + 2) / 16, 1);
+        shaderProjectionApply.Dispatch(kernelProjectionApply, (N + 2) / 32, (N + 2) / 32, 1);
         _uOutBuffer.GetData(u);
         _vOutBuffer.GetData(v);
         //Project(ref u, ref v, uPrev, vPrev);
@@ -525,28 +567,28 @@ public class FluidManager : MonoBehaviour
 
     void OnDrawGizmos()
     {
-        if (sampleSize == 0)
-        {
-            return;
-        }
+        //if (sampleSize == 0)
+        //{
+        //    return;
+        //}
 
-        int i = 0;
-        int j = 0;
-        float val;
-        for (float x = sampleHalfSize; x < 1; x += sampleSize)
-        {
-            j = 0;
-            for (float y = sampleHalfSize; y < 1; y += sampleSize)
-            {
-                val = dens[IX(i, j)];
-                Gizmos.color = new Color(val, val, val, 1f);
-                //Gizmos.color = new Color(((forceField[IX(i, j)].x / 1000f) + 1f) / 2f, ((forceField[IX(i, j)].y / 1000f) + 1f) / 2f, 0f, 1f);
-                //Gizmos.color = new Color(((u[IX(i, j)]) + 1f) / 2f, ((v[IX(i, j)]) + 1f) / 2f, 0f, 1f);
-                Gizmos.DrawCube(new Vector3(x, y, 0f), new Vector3(sampleSize, sampleSize, 1f));
-                j++;
-            }
-            i++;
-        }
+        //int i = 0;
+        //int j = 0;
+        //float val;
+        //for (float x = sampleHalfSize; x < 1; x += sampleSize)
+        //{
+        //    j = 0;
+        //    for (float y = sampleHalfSize; y < 1; y += sampleSize)
+        //    {
+        //        val = dens[IX(i, j)];
+        //        Gizmos.color = new Color(val, val, val, 1f);
+        //        //Gizmos.color = new Color(((forceField[IX(i, j)].x / 1000f) + 1f) / 2f, ((forceField[IX(i, j)].y / 1000f) + 1f) / 2f, 0f, 1f);
+        //        //Gizmos.color = new Color(((u[IX(i, j)]) + 1f) / 2f, ((v[IX(i, j)]) + 1f) / 2f, 0f, 1f);
+        //        Gizmos.DrawCube(new Vector3(x, y, 0f), new Vector3(sampleSize, sampleSize, 1f));
+        //        j++;
+        //    }
+        //    i++;
+        //}
     }
 
     private void OnGUI()
