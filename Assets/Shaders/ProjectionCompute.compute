@@ -3,20 +3,19 @@
 
 // Create a RenderTexture with enableRandomWrite flag and set it
 // with cs.SetTexture
-RWStructuredBuffer<float> Result;
+RWStructuredBuffer<float> _p;
 
-int _b;
+StructuredBuffer<float> _u;
+StructuredBuffer<float> _v;
+
 int _N;
-float _diff;
-float _dt;
-StructuredBuffer<float> _x0;
 
 int IX(int i, int j)
 {
 	return i + (_N + 2) * j;
 }
 
-[numthreads(32,32,1)]
+[numthreads(16,16,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
 	int index = IX(id.x, id.y);
@@ -25,13 +24,15 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 	int indexUp = IX(id.x, id.y + 1);
 	int indexDown = IX(id.x, id.y - 1);
 
-	float a = _dt * _diff * _N * _N;
+	float h;
+	h = 1. / (float) _N;
+	float div = -0.5 * h * (_u[indexRight] - _u[indexLeft] + _v[indexUp] - _v[indexDown]);
 	if ((id.x + id.y) % 2 == 0) {
-		Result[index] = (_x0[index] + a * (Result[indexLeft] + Result[indexRight] + Result[indexDown] + Result[indexUp])) / (1. + 4. * a);
+		_p[index] = (div + _p[indexLeft] + _p[indexRight] + _p[indexDown] + _p[indexUp]) / 4.;
 	}
 	AllMemoryBarrier();
 	if ((id.x + id.y) % 2 == 1) {
-		Result[index] = (_x0[index] + a * (Result[indexLeft] + Result[indexRight] + Result[indexDown] + Result[indexUp])) / (1. + 4. * a);
+		_p[index] = (div + _p[indexLeft] + _p[indexRight] + _p[indexDown] + _p[indexUp]) / 4.;
 	}
 	AllMemoryBarrier();
 }

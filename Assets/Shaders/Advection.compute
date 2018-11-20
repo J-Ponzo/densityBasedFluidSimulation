@@ -17,26 +17,9 @@ int IX(int i, int j)
 	return i + (_N + 2) * j;
 }
 
-void SetBnd(int b)
-{
-	for (int i = 1; i < _N + 1; i++)
-	{
-		_d[IX(0, i)] = b == 1 ? -_d[IX(1, i)] : _d[IX(1, i)];
-		_d[IX(_N + 1, i)] = b == 1 ? -_d[IX(_N, i)] : _d[IX(_N, i)];
-		_d[IX(i, 0)] = b == 2 ? -_d[IX(i, 1)] : _d[IX(i, 1)];
-		_d[IX(i, _N + 1)] = b == 2 ? -_d[IX(i, _N)] : _d[IX(i, _N)];
-	}
-	_d[IX(0, 0)] = 0.5 * (_d[IX(1, 0)] + _d[IX(0, 1)]);
-	_d[IX(0, _N + 1)] = 0.5 * (_d[IX(1, _N + 1)] + _d[IX(0, _N)]);
-	_d[IX(_N + 1, 0)] = 0.5 * (_d[IX(_N, 0)] + _d[IX(_N + 1, 1)]);
-	_d[IX(_N + 1, _N + 1)] = 0.5 * (_d[IX(_N, _N + 1)] + _d[IX(_N + 1, _N)]);
-}
-
 [numthreads(32,32,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-	//if (id.x < 1 || id.x > _N || id.y < 1 || id.y > _N) return;
-
 	int i0, j0, i1, j1;
 	float x, y, s0, t0, s1, t1, dt0;
 	dt0 = _dt * (float) _N;

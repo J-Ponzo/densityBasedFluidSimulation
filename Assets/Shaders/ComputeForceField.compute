@@ -11,7 +11,6 @@ struct M_ForceSrc {
 RWStructuredBuffer<float2> Result;
 
 int _N;
-float _sampleSize;
 int _sourcesCount;
 StructuredBuffer<M_ForceSrc> _sources;
 
@@ -20,11 +19,12 @@ int IX(int i, int j)
 	return i + (_N + 2) * j;
 }
 
-[numthreads(32,32,1)]
+[numthreads(16,16,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
+	float h = 1. / _N;
 	//Find world location
-	float2 worldLocation = float2((float)id.x * _sampleSize + _sampleSize / 2., (float) id.y * _sampleSize + _sampleSize / 2.);
+	float2 worldLocation = float2((float)id.x * h + h / 2., (float) id.y * h + h / 2.);
 
 	float2 force = float2(0., 0.);
 	float2 direction;
