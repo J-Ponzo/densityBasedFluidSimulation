@@ -1,0 +1,25 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+RWTexture2D<float4> Result;
+
+StructuredBuffer<float> _u;
+StructuredBuffer<float> _v;
+StructuredBuffer<float> _d;
+
+int _N;
+
+int IX(int i, int j)
+{
+	return i + (_N + 2) * j;
+}
+
+[numthreads(32,32,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    // TODO: insert actual code here!
+	int index = IX(id.x, id.y);
+    Result[id.xy] = float4(_u[index], _v[index], _d[index], 1.0);
+}

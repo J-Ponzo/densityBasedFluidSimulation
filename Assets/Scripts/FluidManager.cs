@@ -87,6 +87,16 @@ public class FluidManager : MonoBehaviour
     private ComputeBuffer _vOutBuffer;
     private ComputeBuffer _pInBuffer;
 
+    //Fill Render Texture
+    public ComputeShader shaderFillFluidRTexDef;
+
+    private int kernelFillFluidRTex;
+    private ComputeShader shaderFillFluidRTex;
+    private ComputeBuffer _urInBuffer;
+    private ComputeBuffer _vrInBuffer;
+    private ComputeBuffer _drInBuffer;
+    private RenderTexture fluidRenderTexture;
+
     // Start is called before the first frame update
     void Start()
     {
@@ -116,8 +126,17 @@ public class FluidManager : MonoBehaviour
         kernelProjectionCompute = shaderProjectionCompute.FindKernel("CSMain");
         shaderProjectionApply = (ComputeShader)Instantiate(shaderProjectionApplyDef);
         kernelProjectionApply = shaderProjectionApply.FindKernel("CSMain");
+        shaderFillFluidRTex = (ComputeShader)Instantiate(shaderFillFluidRTexDef);
+        kernelFillFluidRTex = shaderFillFluidRTex.FindKernel("CSMain");
 
         InitShaderData();
+        SetupRenderMedium();
+    }
+
+    private void SetupRenderMedium()
+    {
+        SpriteRenderer renderer = GetComponentInChildren<SpriteRenderer>();
+        renderer.material.SetTexture("_FluidTex", fluidRenderTexture);
     }
 
     private void InitShaderData()
@@ -178,6 +197,19 @@ public class FluidManager : MonoBehaviour
         shaderProjectionApply.SetBuffer(kernelProjectionApply, "_v", _vOutBuffer);
         _pInBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
         shaderProjectionApply.SetBuffer(kernelProjectionApply, "_p", _pInBuffer);
+
+        //FillFluidRenderTex shader init
+        shaderFillFluidRTex.SetInt("_N", N);
+        _urInBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderFillFluidRTex.SetBuffer(kernelFillFluidRTex, "_u", _urInBuffer);
+        _vrInBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderFillFluidRTex.SetBuffer(kernelFillFluidRTex, "_v", _vrInBuffer);
+        _drInBuffer = new ComputeBuffer((N + 2) * (N + 2), 4);
+        shaderFillFluidRTex.SetBuffer(kernelFillFluidRTex, "_d", _drInBuffer);
+        fluidRenderTexture = new RenderTexture(N, N, 1);
+        fluidRenderTexture.enableRandomWrite = true;
+        fluidRenderTexture.Create();
+        shaderFillFluidRTex.SetTexture(kernelFillFluidRTex, "Result", fluidRenderTexture);
     }
 
     private void UpdateForceFieldComputeShaderData()
@@ -237,6 +269,13 @@ public class FluidManager : MonoBehaviour
         _pInBuffer.SetData(p);
     }
 
+    private void UpdateFillFluidRenderTexShaderData(float[] u, float[] v, float[] d)
+    {
+        _urInBuffer.SetData(u);
+        _vrInBuffer.SetData(v);
+        _drInBuffer.SetData(d);
+    }
+
     private void OnDestroy()
     {
         if (_sourcesBuffer != null) _sourcesBuffer.Dispose();
@@ -257,6 +296,9 @@ public class FluidManager : MonoBehaviour
         if (_vfBuffer != null) _vfBuffer.Dispose();
         if (_fBuffer != null) _fBuffer.Dispose();
         if (_dfBuffer != null) _dfBuffer.Dispose();
+        if (_urInBuffer != null) _urInBuffer.Dispose();
+        if (_vrInBuffer != null) _vrInBuffer.Dispose();
+        if (_drInBuffer != null) _drInBuffer.Dispose();
     }
 
     int IX(int i, int j)
@@ -562,33 +604,9 @@ public class FluidManager : MonoBehaviour
 
     private void DrawStep()
     {
-        //TODO implement shading
-    }
-
-    void OnDrawGizmos()
-    {
-        //if (sampleSize == 0)
-        //{
-        //    return;
-        //}
-
-        //int i = 0;
-        //int j = 0;
-        //float val;
-        //for (float x = sampleHalfSize; x < 1; x += sampleSize)
-        //{
-        //    j = 0;
-        //    for (float y = sampleHalfSize; y < 1; y += sampleSize)
-        //    {
-        //        val = dens[IX(i, j)];
-        //        Gizmos.color = new Color(val, val, val, 1f);
-        //        //Gizmos.color = new Color(((forceField[IX(i, j)].x / 1000f) + 1f) / 2f, ((forceField[IX(i, j)].y / 1000f) + 1f) / 2f, 0f, 1f);
-        //        //Gizmos.color = new Color(((u[IX(i, j)]) + 1f) / 2f, ((v[IX(i, j)]) + 1f) / 2f, 0f, 1f);
-        //        Gizmos.DrawCube(new Vector3(x, y, 0f), new Vector3(sampleSize, sampleSize, 1f));
-        //        j++;
-        //    }
-        //    i++;
-        //}
+        UpdateFillFluidRenderTexShaderData(u, v, dens);
+        
+        shaderFillFluidRTex.Dispatch(kernelFillFluidRTex, 512 / 32, 512 / 32, 1);
     }
 
     private void OnGUI()
